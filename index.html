@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>到府打掃預約系統</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
         :root {
             --bg-color: #fcfbf9;
@@ -234,7 +237,7 @@
 
     <div class="container">
         <h1>到府打掃預約服務</h1>
-        <p class="subtitle">請選擇您希望預約的人員與時段（自動同步行事曆與試算表）</p>
+        <p class="subtitle">請選擇您希望預約的人員與時段</p>
 
         <div class="staff-tabs" id="staffTabs">
             <button class="tab-btn active" onclick="switchStaff('1號')">1號</button>
@@ -242,7 +245,7 @@
             <button class="tab-btn" onclick="switchStaff('3號')">3號</button>
         </div>
 
-        <div id="loadingOverlay">正在載入預約狀態...</div>
+        <div id="loadingOverlay">正在載入雲端預約狀態...</div>
         <div class="schedule-list" id="scheduleList" style="display: none;"></div>
     </div>
 
@@ -276,8 +279,22 @@
     </div>
 
     <script>
+        // Firebase 設定初始化
+        const firebaseConfig = {
+            apiKey: "AIzaSyB8AGWnUJKmShJ_yMy76fcYvY4TS22luc",
+            authDomain: "booking-b786d.firebaseapp.com",
+            projectId: "booking-b786d",
+            storageBucket: "booking-b786d.firebasestorage.app",
+            messagingSenderId: "571514198544",
+            appId: "1:571514198544:web:8c374391d86b64a5b60895",
+            measurementId: "G-6G308V8CHJ"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Google Apps Script 網址（用來同步 Google 試算表與行事曆）
         const scriptURL = 'https://script.google.com/macros/s/AKfycbw6CBqsL6yNQrGAUOvFEgakLMZ34r9YyMgfMniwFb97GOLgzwpggAeIRDNTjYXTtD-pew/exec';
-        
+
         let currentStaff = '1號';
         let selectedDate = '';
         let selectedTime = '';
@@ -314,18 +331,22 @@
             return dates;
         }
 
-        // 從 Google Apps Script 讀取已預約資料
-        async function fetchBookings() {
-            try {
-                let response = await fetch(scriptURL);
-                let data = await response.json();
-                bookings = data;
-            } catch (error) {
-                console.error("讀取預約失敗:", error);
-            }
-            document.getElementById('loadingOverlay').style.display = 'none';
-            document.getElementById('scheduleList').style.display = 'flex';
-            renderSchedule();
+        // 從 Firebase 即時監聽資料（確保秒速反灰）
+        function listenBookings() {
+            db.collection("bookings").onSnapshot((snapshot) => {
+                bookings = {};
+                snapshot.forEach((doc) => {
+                    let data = doc.data();
+                    let key = `${data.staff}_${data.date}_${data.time}`;
+                    bookings[key] = data;
+                });
+                document.getElementById('loadingOverlay').style.display = 'none';
+                document.getElementById('scheduleList').style.display = 'flex';
+                renderSchedule();
+            }, (error) => {
+                console.error("讀取資料失敗: ", error);
+                document.getElementById('loadingOverlay').innerText = "載入雲端資料失敗，請檢查網路連線";
+            });
         }
 
         function renderSchedule() {
@@ -398,31 +419,30 @@
                 name: name,
                 phone: phone,
                 address: address,
-                remark: remark
+                remark: remark,
+                createdAt: new Date().toISOString()
             };
 
             try {
-                let response = await fetch(scriptURL, {
+                // 1. 寫入 Firebase (秒速反灰)
+                await db.collection("bookings").add(bookingData);
+                
+                // 2. 同步發送給 Google Apps Script (寫入 Google 試算表與行事曆)
+                fetch(scriptURL, {
                     method: 'POST',
                     body: JSON.stringify(bookingData)
-                });
-                let result = await response.json();
-                
-                if(result.status === "success") {
-                    alert('預約成功！已同步至您的 Google 試算表與行事曆。');
-                    closeModal();
-                    fetchBookings(); // 重新載入最新狀態
-                } else {
-                    alert('預約失敗，請再試一次。');
-                }
+                }).catch(err => console.log("GAS 同步背景執行中", err));
+
+                alert('預約成功！');
+                closeModal();
             } catch (error) {
-                console.error("寫入錯誤:", error);
-                alert('預約發生錯誤，請檢查網路連線！');
+                console.error("預約寫入失敗: ", error);
+                alert('預約發生錯誤，請稍後再試！');
             }
         }
 
-        // 初始化載入
-        fetchBookings();
+        // 啟動 Firebase 監聽
+        listenBookings();
     </script>
 </body>
 </html>
