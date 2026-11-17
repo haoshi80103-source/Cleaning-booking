@@ -402,45 +402,44 @@
         }
 
         async function confirmBooking() {
-            let name = document.getElementById('clientName').value.trim();
-            let phone = document.getElementById('clientPhone').value.trim();
-            let address = document.getElementById('clientAddress').value.trim();
-            let remark = document.getElementById('clientRemark').value.trim();
+    let name = document.getElementById('clientName').value.trim();
+    let phone = document.getElementById('clientPhone').value.trim();
+    let address = document.getElementById('clientAddress').value.trim();
+    let remark = document.getElementById('clientRemark').value.trim();
 
-            if (!name || !phone || !address) {
-                alert('請完整填寫姓名、電話與到府地址！');
-                return;
-            }
+    if (!name || !phone || !address) {
+        alert('請完整填寫姓名、電話與到府地址！');
+        return;
+    }
 
-            let bookingData = {
-                staff: currentStaff,
-                date: selectedDate,
-                time: selectedTime,
-                name: name,
-                phone: phone,
-                address: address,
-                remark: remark,
-                createdAt: new Date().toISOString()
-            };
+    let bookingData = {
+        staff: currentStaff,
+        date: selectedDate,
+        time: selectedTime,
+        name: name,
+        phone: phone,
+        address: address,
+        remark: remark,
+        createdAt: new Date().toISOString()
+    };
 
-            try {
-                // 1. 寫入 Firebase (秒速反灰)
-                await db.collection("bookings").add(bookingData);
-                
-                // 2. 同步發送給 Google Apps Script (寫入 Google 試算表與行事曆)
-                fetch(scriptURL, {
-                    method: 'POST',
-                    body: JSON.stringify(bookingData)
-                }).catch(err => console.log("GAS 同步背景執行中", err));
+    try {
+        // 1. 只寫入 Firebase（由 Firebase 負責前端的秒速反灰與資料同步）
+        await db.collection("bookings").add(bookingData);
+        
+        // 2. 同步發送給 Google Apps Script 寫入試算表與行事曆（加上防重複機制或確保只送一次）
+        await fetch(scriptURL, {
+            method: 'POST',
+            body: JSON.stringify(bookingData)
+        });
 
-                alert('預約成功！');
-                closeModal();
-            } catch (error) {
-                console.error("預約寫入失敗: ", error);
-                alert('預約發生錯誤，請稍後再試！');
-            }
-        }
-
+        alert('預約成功！已同步至行事曆與試算表。');
+        closeModal();
+    } catch (error) {
+        console.error("預約寫入失敗: ", error);
+        alert('預約發生錯誤，請稍後再試！');
+    }
+}
         // 啟動 Firebase 監聽
         listenBookings();
     </script>
