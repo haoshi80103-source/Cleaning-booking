@@ -1,16 +1,32 @@
+JavaScript
+const firebaseConfig = {
+    apiKey: "AIzaSyB8AGWnUJKmShJ_yMy76fcYvY4TS22luc",
+    authDomain: "booking-b786d.firebaseapp.com",
+    projectId: "booking-b786d",
+    storageBucket: "booking-b786d.firebasestorage.app",
+    messagingSenderId: "571514198544",
+    appId: "1:571514198544:web:8c374391d86b64a5b60895",
+    measurementId: "G-6G308V8CHJ"
+};
+```[cite: 10]
+
+```html
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>到府打掃預約系統</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
         :root {
             --bg-color: #fcfbf9;
             --card-bg: #ffffff;
             --text-main: #2c2c2c;
             --text-sub: #7b7b7b;
-            --accent: #78866b; /* 文青低飽和抹茶綠 */
+            --accent: #78866b;
             --accent-hover: #637056;
             --border-color: #e6e4df;
             --disabled-bg: #f0eee9;
@@ -21,7 +37,7 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
         body {
@@ -51,7 +67,6 @@
             letter-spacing: 1px;
             text-align: center;
             margin-bottom: 8px;
-            color: var(--text-main);
         }
 
         .subtitle {
@@ -61,7 +76,6 @@
             margin-bottom: 30px;
         }
 
-        /* 人員切換 Tabs */
         .staff-tabs {
             display: flex;
             justify-content: center;
@@ -86,7 +100,6 @@
             border-color: var(--accent);
         }
 
-        /* 預約列表區塊 */
         .schedule-list {
             display: flex;
             flex-direction: column;
@@ -107,7 +120,6 @@
             font-size: 15px;
             font-weight: 500;
             margin-bottom: 12px;
-            color: var(--text-main);
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 6px;
         }
@@ -144,7 +156,6 @@
             text-decoration: line-through;
         }
 
-        /* 彈出表單 Modal */
         .modal {
             display: none;
             position: fixed;
@@ -227,28 +238,30 @@
         }
 
         .btn-submit:hover { background: var(--accent-hover); }
+        
+        #loadingOverlay {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-sub);
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>到府打掃預約服務</h1>
-        <p class="subtitle">請選擇您希望預約的人員與時段（可預約未來 2 個月）</p>
+        <p class="subtitle">請選擇您希望預約的人員與時段（即時雲端同步）</p>
 
-        <!-- 人員切換 -->
         <div class="staff-tabs" id="staffTabs">
             <button class="tab-btn active" onclick="switchStaff('1號')">1號</button>
-            <button class="tab-btn active" onclick="switchStaff('2號')">2號</button>
-            <button class="tab-btn active" onclick="switchStaff('3號')">3號</button>
+            <button class="tab-btn" onclick="switchStaff('2號')">2號</button>
+            <button class="tab-btn" onclick="switchStaff('3號')">3號</button>
         </div>
 
-        <!-- 預約列表 -->
-        <div class="schedule-list" id="scheduleList">
-            <!-- 動態生成 -->
-        </div>
+        <div id="loadingOverlay">正在載入雲端預約狀態...</div>
+        <div class="schedule-list" id="scheduleList" style="display: none;"></div>
     </div>
 
-    <!-- 填寫資料 Modal -->
     <div class="modal" id="bookingModal">
         <div class="modal-content">
             <h3>填寫預約資料</h3>
@@ -268,7 +281,7 @@
             </div>
             <div class="form-group">
                 <label>備註說明 (選填)</label>
-                <textarea id="clientRemark" rows="3" placeholder="例如：有養寵物、大門密碼、重點清掃區域等"></textarea>
+                <textarea id="clientRemark" rows="3" placeholder="例如：有養寵物、大門密碼等"></textarea>
             </div>
 
             <div class="modal-actions">
@@ -279,14 +292,24 @@
     </div>
 
     <script>
+        // Firebase 設定初始化
+        const firebaseConfig = {
+            apiKey: "AIzaSyB8AGWnUJKmShJ_yMy76fcYvY4TS22luc",
+            authDomain: "booking-b786d.firebaseapp.com",
+            projectId: "booking-b786d",
+            storageBucket: "booking-b786d.firebasestorage.app",
+            messagingSenderId: "571514198544",
+            appId: "1:571514198544:web:8c374391d86b64a5b60895",
+            measurementId: "G-6G308V8CHJ"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
         let currentStaff = '1號';
         let selectedDate = '';
         let selectedTime = '';
+        let bookings = {}; // 儲存雲端資料
 
-        // 從 localStorage 讀取預約資料，若無則為空物件
-        let bookings = JSON.parse(localStorage.getItem('cleaning_bookings')) || {};
-
-        // 初始化人員 Tab 狀態
         function switchStaff(staff) {
             currentStaff = staff;
             document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -299,7 +322,6 @@
             renderSchedule();
         }
 
-        // 產生未來 60 天（2個月）的日期清單
         function generateDates() {
             let dates = [];
             let today = new Date();
@@ -319,7 +341,24 @@
             return dates;
         }
 
-        // 渲染畫面時段
+        // 從 Firebase 即時監聽資料
+        function listenBookings() {
+            db.collection("bookings").onSnapshot((snapshot) => {
+                bookings = {};
+                snapshot.forEach((doc) => {
+                    let data = doc.data();
+                    let key = `${data.staff}_${data.date}_${data.time}`;
+                    bookings[key] = data;
+                });
+                document.getElementById('loadingOverlay').style.display = 'none';
+                document.getElementById('scheduleList').style.display = 'flex';
+                renderSchedule();
+            }, (error) => {
+                console.error("讀取資料失敗: ", error);
+                document.getElementById('loadingOverlay').innerText = "載入雲端資料失敗，請檢查網路連線";
+            });
+        }
+
         function renderSchedule() {
             const listContainer = document.getElementById('scheduleList');
             listContainer.innerHTML = '';
@@ -341,7 +380,6 @@
                     let btn = document.createElement('button');
                     btn.className = 'slot-btn';
                     
-                    // 檢查是否已被預約：格式為 bookings[staff_date_time]
                     let key = `${currentStaff}_${item.dateStr}_${time}`;
                     if (bookings[key]) {
                         btn.disabled = true;
@@ -358,7 +396,6 @@
             });
         }
 
-        // 打開填寫表單 Modal
         function openModal(date, time) {
             selectedDate = date;
             selectedTime = time;
@@ -370,13 +407,11 @@
             document.getElementById('bookingModal').classList.add('active');
         }
 
-        // 關閉 Modal
         function closeModal() {
             document.getElementById('bookingModal').classList.remove('active');
         }
 
-        // 確認送出預約
-        function confirmBooking() {
+        async function confirmBooking() {
             let name = document.getElementById('clientName').value.trim();
             let phone = document.getElementById('clientPhone').value.trim();
             let address = document.getElementById('clientAddress').value.trim();
@@ -387,25 +422,31 @@
                 return;
             }
 
-            let key = `${currentStaff}_${selectedDate}_${selectedTime}`;
-            bookings[key] = {
-                name,
-                phone,
-                address,
-                remark,
-                timestamp: new Date().toLocaleString()
+            let bookingData = {
+                staff: currentStaff,
+                date: selectedDate,
+                time: selectedTime,
+                name: name,
+                phone: phone,
+                address: address,
+                remark: remark,
+                createdAt: new Date().toISOString()
             };
 
-            // 存入 localStorage
-            localStorage.setItem('cleaning_bookings', JSON.stringify(bookings));
-
-            alert('預約成功！');
-            closeModal();
-            renderSchedule();
+            try {
+                // 寫入 Firebase Firestore
+                await db.collection("bookings").add(bookingData);
+                alert('預約成功！');
+                closeModal();
+            } catch (error) {
+                console.error("預約寫入失敗: ", error);
+                alert('預約發生錯誤，請稍後再試！');
+            }
         }
 
-        // 初始化執行
-        switchStaff('1號');
+        // 啟動監聽
+        listenBookings();
     </script>
 </body>
 </html>
+```[cite: 10]
